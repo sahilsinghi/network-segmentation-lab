@@ -1,0 +1,80 @@
+###################### Filebeat — Suricata EVE JSON → Wazuh ######################
+# Reads Suricata EVE JSON from shared volume and ships to Wazuh manager.
+# Before deploying: replace WAZUH_MANAGER_IP with your actual Wazuh manager IP.
+# Obtain TLS certs from your Wazuh manager:
+#   scp wazuh-admin@<WAZUH_IP>:/etc/wazuh-manager/api/configuration/ssl/root-ca.pem \
+#       filebeat/certs/wazuh-ca.crt
+#   (Enroll filebeat via Wazuh dashboard → Agents → Add agent → Filebeat)
+##################################################################################
+
+filebeat.inputs:
+  - type: filestream
+    id: suricata-eve
+    enabled: true
+    paths:
+      - /suricata-logs/eve.json
+    parsers:
+      - ndjson:
+          overwrite-keys: true
+          add-error-key: true
+          target: ""
+    fields:
+      log_type: suricata
+      zone_lab: network-seg-lab
+    fields_under_root: true
+    processors:
+      - add_tags:
+          tags: [suricata, network-ids, lateral-movement]
+
+# ── Suricata module (enriches EVE JSON with Wazuh-compatible field mapping) ──
+filebeat.modules:
+  - module: suricata
+    eve:
+      enabled: true
+      var.paths: ["/suricata-logs/eve.json"]
+
+# ── Output: Wazuh manager logstash-compatible input (port 5044) ──────────────
+output.logstash:
+  # REPLACE with your Wazuh manager IP before deploying
+  hosts: ["WAZUH_MANAGER_IP:5044"]
+  ssl:
+    enabled: true
+    certificate_authorities:
+      - /etc/filebeat/certs/wazuh-ca.crt
+    certificate: /etc/filebeat/certs/filebeat.crt
+    key: /etc/filebeat/certs/filebeat.key
+    verification_mode: full
+
+# ── Processors ───────────────────────────────────────────────────────────────
+processors:
+  - add_host_metadata:
+      when.not.contains.tags: forwarded
+  - add_cloud_metadata: ~
+  - add_docker_metadata: ~
+  - decode_json_fields:
+      fields: ["message"]
+      target: "suricata"
+      overwrite_keys: true
+      when:
+        contains:
+          message: "event_type"
+
+# ── Queue and retry ──────────────────────────────────────────────────────────
+queue.mem:
+  events: 4096
+  flush.min_events: 512
+  flush.timeout: 5s
+
+# ── Logging ──────────────────────────────────────────────────────────────────
+logging.level: info
+logging.to_files: true
+logging.files:
+  path: /var/log/filebeat
+  name: filebeat
+  keepfiles: 7
+  permissions: 0640
+logging.metrics.enabled: true
+logging.metrics.period: 30s
+
+# ── Monitoring (optional — remove if not using Kibana monitoring) ─────────────
+monitoring.enabled: false

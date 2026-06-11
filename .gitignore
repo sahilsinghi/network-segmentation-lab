@@ -1,0 +1,10 @@
+logs/
+screenshots/*.png
+filebeat/certs/*.crt
+filebeat/certs/*.key
+filebeat/certs/*.pem
+.containerlab/
+__pycache__/
+*.pyc
+.DS_Store
+/tmp/

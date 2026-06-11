@@ -1,0 +1,190 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Custom Lateral Movement Detection Rules
+# Lab: Multi-Zone Network Segmentation Lab
+# Author: Sahil Singhi
+# MITRE ATT&CK technique IDs embedded in metadata per rule.
+# SID range: 9001001 – 9001015
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Rule 1: SMB enumeration from DMZ zone (T1021.002) ───────────────────────
+# Fires when SMB/445 traffic originates from DMZ toward Internal.
+# VyOS default-deny should block this; Suricata catches any firewall bypass.
+alert tcp $DMZ_NET any -> $INTERNAL_NET 445 \
+  (msg:"LATERAL-MOVE SMB Enumeration from DMZ to Internal T1021.002"; \
+   flow:established,to_server; \
+   content:"|FF|SMB"; depth:9; offset:4; \
+   classtype:policy-violation; \
+   sid:9001001; rev:1; \
+   metadata:attack_target Client_Endpoint, \
+             created_at 2026_06_11, \
+             mitre_tactic Lateral_Movement, \
+             mitre_technique_id T1021.002, \
+             mitre_technique_name Remote_Services_SMB;)
+
+# ── Rule 2: SMB enumeration from DMZ zone via NetBIOS (T1021.002) ───────────
+alert tcp $DMZ_NET any -> $INTERNAL_NET 139 \
+  (msg:"LATERAL-MOVE SMB/NetBIOS from DMZ T1021.002"; \
+   flow:established,to_server; \
+   classtype:policy-violation; \
+   sid:9001002; rev:1; \
+   metadata:attack_target Client_Endpoint, \
+             mitre_tactic Lateral_Movement, \
+             mitre_technique_id T1021.002;)
+
+# ── Rule 3: SSH from Data zone outbound (policy violation + T1021.004) ───────
+# Data zone should NEVER initiate SSH — flag any such attempt.
+alert tcp $DATA_NET any -> any 22 \
+  (msg:"POLICY-VIOLATION SSH Initiated from Data Zone T1021.004"; \
+   flow:to_server,not_established; \
+   flags:S,12; \
+   classtype:policy-violation; \
+   sid:9001003; rev:1; \
+   metadata:attack_target Server_Endpoint, \
+             mitre_tactic Lateral_Movement, \
+             mitre_technique_id T1021.004, \
+             mitre_technique_name Remote_Services_SSH;)
+
+# ── Rule 4: Nmap SYN scan from any zone to Internal (T1046) ─────────────────
+# Detects rapid SYN flag probing consistent with nmap -sS
+alert tcp any any -> $INTERNAL_NET any \
+  (msg:"RECON Port Scan SYN sweep toward Internal T1046"; \
+   flags:S,12; \
+   flow:to_server,not_established; \
+   threshold:type threshold, track by_src, count 20, seconds 5; \
+   classtype:network-scan; \
+   sid:9001004; rev:1; \
+   metadata:attack_target Network, \
+             mitre_tactic Discovery, \
+             mitre_technique_id T1046, \
+             mitre_technique_name Network_Service_Discovery;)
+
+# ── Rule 5: Nmap service version scan signature (T1046) ─────────────────────
+# Nmap sends specific probe strings during -sV scans.
+alert tcp any any -> $HOME_NET any \
+  (msg:"RECON Nmap Service Version Probe T1046"; \
+   flow:established,to_server; \
+   content:"Nmap"; nocase; \
+   classtype:network-scan; \
+   sid:9001005; rev:1; \
+   metadata:mitre_tactic Discovery, \
+             mitre_technique_id T1046;)
+
+# ── Rule 6: Kerberos authentication across zone boundaries (T1558) ───────────
+# Kerberos AS-REQ from non-MGMT zones toward Internal/Data (unusual in this lab)
+alert udp $DMZ_NET any -> $INTERNAL_NET 88 \
+  (msg:"LATERAL-MOVE Kerberos AS-REQ from DMZ T1558"; \
+   content:"|6a 81|"; depth:3; \
+   classtype:policy-violation; \
+   sid:9001006; rev:1; \
+   metadata:attack_target Domain_Controller, \
+             mitre_tactic Credential_Access, \
+             mitre_technique_id T1558, \
+             mitre_technique_name Steal_or_Forge_Kerberos_Tickets;)
+
+# ── Rule 7: DNS tunneling long subdomain query (T1048.003) ───────────────────
+# DNS tunneling tools (dnscat2, iodine) use abnormally long subdomain labels.
+# Any 50+ char label in a DNS query is suspicious in this lab.
+alert dns any any -> any 53 \
+  (msg:"EXFIL DNS Tunneling Long Subdomain Query T1048.003"; \
+   dns.query; content:"."; \
+   pcre:"/[a-zA-Z0-9+\/=]{50,}\./"; \
+   classtype:trojan-activity; \
+   sid:9001007; rev:1; \
+   metadata:attack_target Network, \
+             mitre_tactic Exfiltration, \
+             mitre_technique_id T1048.003, \
+             mitre_technique_name Exfiltration_Over_Alternative_Protocol_DNS;)
+
+# ── Rule 8: dnscat2 beacon pattern (T1048.003) ───────────────────────────────
+# dnscat2 encodes session data in DNS TXT record queries.
+alert dns $DATA_NET any -> any 53 \
+  (msg:"EXFIL dnscat2 DNS C2 Beacon from Data Zone T1048.003"; \
+   dns.query; content:"."; \
+   threshold:type both, track by_src, count 10, seconds 10; \
+   classtype:trojan-activity; \
+   sid:9001008; rev:1; \
+   metadata:mitre_tactic Exfiltration, \
+             mitre_technique_id T1048.003;)
+
+# ── Rule 9: Reverse shell bash TCP pattern (T1059.004) ───────────────────────
+# Detects "bash -i >& /dev/tcp/" content in stream — classic bash reverse shell.
+alert tcp $HOME_NET any -> any any \
+  (msg:"EXECUTION Bash Reverse Shell Attempt T1059.004"; \
+   flow:established,to_server; \
+   content:"bash"; nocase; \
+   content:"/dev/tcp/"; within:64; nocase; \
+   classtype:trojan-activity; \
+   sid:9001009; rev:1; \
+   metadata:attack_target Client_Endpoint, \
+             mitre_tactic Execution, \
+             mitre_technique_id T1059.004, \
+             mitre_technique_name Command_and_Scripting_Interpreter_Unix_Shell;)
+
+# ── Rule 10: Python reverse shell beacon (T1059.006) ─────────────────────────
+alert tcp $HOME_NET any -> any any \
+  (msg:"EXECUTION Python Reverse Shell Payload T1059.006"; \
+   flow:established,to_server; \
+   content:"import socket"; nocase; \
+   content:"connect("; within:128; nocase; \
+   classtype:trojan-activity; \
+   sid:9001010; rev:1; \
+   metadata:mitre_tactic Execution, \
+             mitre_technique_id T1059.006;)
+
+# ── Rule 11: SSH brute force threshold (T1110.001) ───────────────────────────
+# Flag rapid SSH connection attempts from a single source — brute force.
+alert tcp any any -> $HOME_NET 22 \
+  (msg:"BRUTE-FORCE SSH Multiple Authentication Attempts T1110.001"; \
+   flow:to_server,not_established; flags:S,12; \
+   threshold:type threshold, track by_src, count 5, seconds 30; \
+   classtype:attempted-admin; \
+   sid:9001011; rev:1; \
+   metadata:attack_target Server_Endpoint, \
+             mitre_tactic Credential_Access, \
+             mitre_technique_id T1110.001, \
+             mitre_technique_name Brute_Force_Password_Guessing;)
+
+# ── Rule 12: Oversized ICMP — potential covert channel (T1095) ───────────────
+# Standard ICMP ping is 64 bytes. Payloads >512 bytes suggest data encoding.
+alert icmp any any -> $HOME_NET any \
+  (msg:"COVERT-CHANNEL Oversized ICMP Packet T1095"; \
+   itype:8; \
+   dsize:>512; \
+   classtype:policy-violation; \
+   sid:9001012; rev:1; \
+   metadata:attack_target Network, \
+             mitre_tactic Command_And_Control, \
+             mitre_technique_id T1095, \
+             mitre_technique_name Non-Application_Layer_Protocol;)
+
+# ── Rule 13: ICMP flood from DMZ (T1046 / T1095) ─────────────────────────────
+alert icmp $DMZ_NET any -> $INTERNAL_NET any \
+  (msg:"COVERT-CHANNEL ICMP Flood from DMZ to Internal T1095"; \
+   itype:8; \
+   threshold:type threshold, track by_src, count 30, seconds 5; \
+   classtype:policy-violation; \
+   sid:9001013; rev:1; \
+   metadata:mitre_tactic Command_And_Control, \
+             mitre_technique_id T1095;)
+
+# ── Rule 14: Impacket psexec/smbexec signature (T1021.002) ───────────────────
+# Impacket's SMB execution leaves a known PSEXESVC service name in streams.
+alert tcp any any -> $HOME_NET 445 \
+  (msg:"LATERAL-MOVE Impacket SMBExec/PsExec Service Name T1021.002"; \
+   flow:established,to_server; \
+   content:"PSEXESVC"; nocase; \
+   classtype:trojan-activity; \
+   sid:9001014; rev:1; \
+   metadata:attack_target Server_Endpoint, \
+             mitre_tactic Lateral_Movement, \
+             mitre_technique_id T1021.002;)
+
+# ── Rule 15: SMB tree connect to ADMIN$ or C$ (T1021.002) ────────────────────
+# Default admin share access — used in pass-the-hash and lateral movement.
+alert smb $DMZ_NET any -> $HOME_NET any \
+  (msg:"LATERAL-MOVE SMB Admin Share Access ADMIN$/C$ T1021.002"; \
+   smb.share; content:"ADMIN$"; nocase; \
+   classtype:policy-violation; \
+   sid:9001015; rev:1; \
+   metadata:mitre_tactic Lateral_Movement, \
+             mitre_technique_id T1021.002;)

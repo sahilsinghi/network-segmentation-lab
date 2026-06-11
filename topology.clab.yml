@@ -1,0 +1,141 @@
+name: network-seg-lab
+
+mgmt:
+  network: clab-mgmt
+  ipv4-subnet: 172.20.20.0/24
+
+topology:
+
+  # ─── Zone bridges (L2 segments) ──────────────────────────────────────────
+  nodes:
+    br-dmz:
+      kind: bridge
+
+    br-internal:
+      kind: bridge
+
+    br-data:
+      kind: bridge
+
+    br-mgmt:
+      kind: bridge
+
+    # ─── Firewall / Router ───────────────────────────────────────────────────
+    vyos:
+      kind: linux
+      image: vyos/vyos:sagitta
+      privileged: true
+      binds:
+        - vyos/bootstrap-config.boot:/opt/vyatta/etc/config/config.boot:ro
+        - /lib/modules:/lib/modules:ro
+      env:
+        VYOS_DONT_LOAD_CONFIG: "false"
+
+    # ─── DMZ zone (10.10.10.0/24) ────────────────────────────────────────────
+    nginx-dmz:
+      kind: linux
+      image: nginx:1.25-alpine
+      binds:
+        - endpoints/nginx-dmz/default.conf:/etc/nginx/conf.d/default.conf:ro
+      exec:
+        - "ip addr add 10.10.10.10/24 dev eth1"
+        - "ip route del default || true"
+        - "ip route add default via 10.10.10.1"
+
+    kali:
+      kind: linux
+      image: kalilinux/kali-rolling
+      binds:
+        - tests/attacks:/opt/attacks
+      exec:
+        - "ip addr add 10.10.10.20/24 dev eth1"
+        - "ip route del default || true"
+        - "ip route add default via 10.10.10.1"
+
+    # ─── Internal zone (10.10.20.0/24) ───────────────────────────────────────
+    workstation:
+      kind: linux
+      image: ubuntu:22.04
+      binds:
+        - endpoints/workstation-internal/setup.sh:/opt/setup.sh:ro
+      exec:
+        - "ip addr add 10.10.20.10/24 dev eth1"
+        - "ip route del default || true"
+        - "ip route add default via 10.10.20.1"
+
+    # ─── Data zone (10.10.30.0/24) ───────────────────────────────────────────
+    postgres-db:
+      kind: linux
+      image: postgres:15-alpine
+      env:
+        POSTGRES_PASSWORD: "labpassword"
+        POSTGRES_DB: "labdb"
+        POSTGRES_USER: "labuser"
+      exec:
+        - "ip addr add 10.10.30.10/24 dev eth1"
+        - "ip route del default || true"
+        - "ip route add default via 10.10.30.1"
+
+    # ─── Management zone (10.10.40.0/24) ─────────────────────────────────────
+    admin-mgmt:
+      kind: linux
+      image: ubuntu:22.04
+      binds:
+        - endpoints/admin-mgmt/setup.sh:/opt/setup.sh:ro
+      exec:
+        - "ip addr add 10.10.40.10/24 dev eth1"
+        - "ip route del default || true"
+        - "ip route add default via 10.10.40.1"
+
+    # ─── Detection plane ─────────────────────────────────────────────────────
+    suricata:
+      kind: linux
+      image: jasonish/suricata:7.0
+      privileged: true
+      binds:
+        - suricata/suricata.yaml:/etc/suricata/suricata.yaml:ro
+        - suricata/custom-rules:/etc/suricata/rules/custom:ro
+        - logs/suricata:/var/log/suricata
+      cmd: |
+        -c /etc/suricata/suricata.yaml
+        --af-packet=eth1
+        --af-packet=eth2
+        --af-packet=eth3
+        --af-packet=eth4
+        -v
+
+    filebeat:
+      kind: linux
+      image: docker.elastic.co/beats/filebeat:8.11.3
+      user: root
+      binds:
+        - filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+        - filebeat/certs:/etc/filebeat/certs:ro
+        - logs/suricata:/suricata-logs:ro
+
+  # ─── Links ───────────────────────────────────────────────────────────────
+  links:
+    # VyOS uplinks to each zone bridge
+    - endpoints: ["vyos:eth1", "br-dmz:vyos"]
+    - endpoints: ["vyos:eth2", "br-internal:vyos"]
+    - endpoints: ["vyos:eth3", "br-data:vyos"]
+    - endpoints: ["vyos:eth4", "br-mgmt:vyos"]
+
+    # DMZ endpoints
+    - endpoints: ["nginx-dmz:eth1", "br-dmz:nginx"]
+    - endpoints: ["kali:eth1", "br-dmz:kali"]
+
+    # Internal endpoints
+    - endpoints: ["workstation:eth1", "br-internal:ws"]
+
+    # Data endpoints
+    - endpoints: ["postgres-db:eth1", "br-data:pg"]
+
+    # Management endpoints
+    - endpoints: ["admin-mgmt:eth1", "br-mgmt:admin"]
+
+    # Suricata passive taps on every zone bridge
+    - endpoints: ["suricata:eth1", "br-dmz:ids-dmz"]
+    - endpoints: ["suricata:eth2", "br-internal:ids-int"]
+    - endpoints: ["suricata:eth3", "br-data:ids-data"]
+    - endpoints: ["suricata:eth4", "br-mgmt:ids-mgmt"]

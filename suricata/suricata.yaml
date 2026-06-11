@@ -1,0 +1,273 @@
+%YAML 1.1
+---
+# Suricata 7.0 — Network Seg Lab
+# IDS mode: alerts only, no inline blocking
+
+vars:
+  address-groups:
+    HOME_NET: "[10.10.0.0/16]"
+    DMZ_NET: "[10.10.10.0/24]"
+    INTERNAL_NET: "[10.10.20.0/24]"
+    DATA_NET: "[10.10.30.0/24]"
+    MGMT_NET: "[10.10.40.0/24]"
+    EXTERNAL_NET: "!$HOME_NET"
+
+  port-groups:
+    HTTP_PORTS: "80"
+    SHELLCODE_PORTS: "!80"
+    ORACLE_PORTS: 1521
+    SSH_PORTS: 22
+    DNP3_PORTS: 20000
+    MODBUS_PORTS: 502
+    FILE_DATA_PORTS: "[$HTTP_PORTS,110,143]"
+    FTP_PORTS: 21
+    GENEVE_PORTS: 6081
+    VXLAN_PORTS: 4789
+    TEREDO_PORTS: 3544
+
+# ── Capture: tap all 4 zone interfaces in AF-PACKET mode ───────────────────
+af-packet:
+  - interface: eth1
+    cluster-id: 99
+    cluster-type: cluster_flow
+    defrag: yes
+    use-mmap: yes
+    tpacket-v3: yes
+    ring-size: 2048
+    block-size: 32768
+    threads: auto
+    copy-mode: ips  # set to 'ips' only if IPS mode is needed; safe in IDS
+
+  - interface: eth2
+    cluster-id: 98
+    cluster-type: cluster_flow
+    defrag: yes
+    use-mmap: yes
+    tpacket-v3: yes
+    ring-size: 2048
+    block-size: 32768
+    threads: auto
+
+  - interface: eth3
+    cluster-id: 97
+    cluster-type: cluster_flow
+    defrag: yes
+    use-mmap: yes
+    tpacket-v3: yes
+    ring-size: 2048
+    block-size: 32768
+    threads: auto
+
+  - interface: eth4
+    cluster-id: 96
+    cluster-type: cluster_flow
+    defrag: yes
+    use-mmap: yes
+    tpacket-v3: yes
+    ring-size: 2048
+    block-size: 32768
+    threads: auto
+
+# ── Outputs ────────────────────────────────────────────────────────────────
+outputs:
+  - eve-log:
+      enabled: yes
+      filetype: regular
+      filename: /var/log/suricata/eve.json
+      pcap-file: false
+      community-id: true
+      community-id-seed: 0
+      types:
+        - alert:
+            payload: yes
+            payload-buffer-size: 4kb
+            payload-printable: yes
+            packet: yes
+            http-body: yes
+            http-body-printable: yes
+            metadata: yes
+            tagged-packets: yes
+        - anomaly:
+            enabled: yes
+            types:
+              decode: yes
+              stream: yes
+              applayer: yes
+        - http:
+            extended: yes
+        - dns:
+            query: yes
+            answer: yes
+        - tls:
+            extended: yes
+        - files:
+            force-magic: yes
+        - smtp: {}
+        - ssh: {}
+        - flow: {}
+        - netflow: {}
+
+  - fast:
+      enabled: yes
+      filename: /var/log/suricata/fast.log
+      append: yes
+
+  - stats:
+      enabled: yes
+      filename: /var/log/suricata/stats.log
+      totals: yes
+      threads: no
+      pkt-engine-profile: no
+      append: yes
+
+  - syslog:
+      enabled: yes
+      facility: local5
+      level: Info
+
+# ── Rules ──────────────────────────────────────────────────────────────────
+default-rule-path: /var/lib/suricata/rules
+
+rule-files:
+  - suricata.rules          # ET Open (downloaded by suricata-update)
+  - /etc/suricata/rules/custom/lateral-movement.rules
+  - /etc/suricata/rules/custom/policy-violations.rules
+
+# ── Classification ─────────────────────────────────────────────────────────
+classification-file: /etc/suricata/classification.config
+reference-config-file: /etc/suricata/reference.config
+threshold-file: /etc/suricata/threshold.config
+
+# ── Engine ─────────────────────────────────────────────────────────────────
+threading:
+  set-cpu-affinity: no
+  cpu-affinity:
+    - management-cpu-set:
+        cpu: [0]
+    - receive-cpu-set:
+        cpu: [0]
+    - worker-cpu-set:
+        cpu: ["all"]
+        mode: "exclusive"
+        prio:
+          low: [0]
+          medium: ["1-2"]
+          high: ["3-4"]
+          default: "medium"
+  detect-thread-ratio: 1.0
+
+detect:
+  profile: medium
+  custom-values:
+    toclient-src-groups: 2
+    toclient-dst-groups: 2
+    toclient-sp-groups: 2
+    toclient-dp-groups: 3
+    toserver-src-groups: 2
+    toserver-dst-groups: 4
+    toserver-sp-groups: 2
+    toserver-dp-groups: 25
+  sgh-mpm-context: auto
+  inspection-recursion-limit: 3000
+
+# ── Logging ────────────────────────────────────────────────────────────────
+logging:
+  default-log-level: notice
+  outputs:
+    - console:
+        enabled: yes
+    - file:
+        enabled: yes
+        level: info
+        filename: /var/log/suricata/suricata.log
+
+# ── Stream ─────────────────────────────────────────────────────────────────
+stream:
+  memcap: 64mb
+  checksum-validation: yes
+  inline: no                # IDS mode — no inline drops
+  reassembly:
+    memcap: 256mb
+    depth: 1mb
+    toserver-chunk-size: 2560
+    toclient-chunk-size: 2560
+    randomize-chunk-size: yes
+
+# ── App-layer protocol detection ───────────────────────────────────────────
+app-layer:
+  protocols:
+    tls:
+      enabled: yes
+      detection-ports:
+        dp: 443
+    dcerpc:
+      enabled: yes
+    smb:
+      enabled: yes
+      detection-ports:
+        dp: 139,445
+    http:
+      enabled: yes
+      libhtp:
+        default-config:
+          personality: IDS
+          request-body-limit: 100kb
+          response-body-limit: 100kb
+    ftp:
+      enabled: yes
+    ssh:
+      enabled: yes
+    smtp:
+      enabled: yes
+    dns:
+      tcp:
+        enabled: yes
+        detection-ports:
+          dp: 53
+      udp:
+        enabled: yes
+        detection-ports:
+          dp: 53
+    http2:
+      enabled: yes
+    rdp:
+      enabled: yes
+    krb5:
+      enabled: yes
+    ikev2:
+      enabled: yes
+
+# ── Flow manager ───────────────────────────────────────────────────────────
+flow:
+  memcap: 128mb
+  hash-size: 65536
+  prealloc: 10000
+  emergency-recovery: 30
+
+flow-timeouts:
+  default:
+    new: 30
+    established: 300
+    closed: 0
+    bypassed: 100
+    emergency-new: 10
+    emergency-established: 100
+    emergency-closed: 0
+    emergency-bypassed: 50
+  tcp:
+    new: 60
+    established: 600
+    closed: 60
+    bypassed: 100
+    emergency-new: 5
+    emergency-established: 100
+    emergency-closed: 10
+    emergency-bypassed: 50
+
+defrag:
+  memcap: 32mb
+  hash-size: 65536
+  trackers: 65535
+  max-frags: 65535
+  prealloc: yes
+  timeout: 60

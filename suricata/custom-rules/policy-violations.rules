@@ -1,0 +1,92 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Policy Violation Detection Rules
+# These detect traffic that violates the documented firewall policy matrix
+# even when VyOS successfully blocks it (belt-and-suspenders detection).
+# SID range: 9002001 – 9002010
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── PV-1: Any TCP from DMZ directly to Data zone ────────────────────────────
+alert tcp $DMZ_NET any -> $DATA_NET any \
+  (msg:"POLICY-VIOLATION DMZ Direct Access to Data Zone"; \
+   flow:to_server,not_established; flags:S,12; \
+   classtype:policy-violation; \
+   sid:9002001; rev:1; \
+   metadata:mitre_tactic Collection, mitre_technique_id T1005;)
+
+# ── PV-2: Any TCP from DMZ to Management zone ────────────────────────────────
+alert tcp $DMZ_NET any -> $MGMT_NET any \
+  (msg:"POLICY-VIOLATION DMZ to Management Zone"; \
+   flow:to_server,not_established; flags:S,12; \
+   classtype:policy-violation; \
+   sid:9002002; rev:1; \
+   metadata:mitre_tactic Lateral_Movement, mitre_technique_id T1021;)
+
+# ── PV-3: Telnet attempt anywhere (legacy protocol, always forbidden) ─────────
+alert tcp any any -> $HOME_NET 23 \
+  (msg:"POLICY-VIOLATION Telnet Attempt — Forbidden Protocol"; \
+   flow:to_server,not_established; flags:S,12; \
+   classtype:policy-violation; \
+   sid:9002003; rev:1; \
+   metadata:mitre_tactic Lateral_Movement, mitre_technique_id T1021;)
+
+# ── PV-4: FTP from internal zones (cleartext file transfer) ──────────────────
+alert tcp $INTERNAL_NET any -> any 21 \
+  (msg:"POLICY-VIOLATION FTP Initiated from Internal Zone"; \
+   flow:to_server,not_established; flags:S,12; \
+   classtype:policy-violation; \
+   sid:9002004; rev:1; \
+   metadata:mitre_tactic Exfiltration, mitre_technique_id T1048;)
+
+# ── PV-5: RDP from DMZ to any zone (T1021.001) ────────────────────────────────
+alert tcp $DMZ_NET any -> $HOME_NET 3389 \
+  (msg:"POLICY-VIOLATION RDP from DMZ T1021.001"; \
+   flow:to_server,not_established; flags:S,12; \
+   classtype:policy-violation; \
+   sid:9002005; rev:1; \
+   metadata:mitre_tactic Lateral_Movement, \
+             mitre_technique_id T1021.001, \
+             mitre_technique_name Remote_Desktop_Protocol;)
+
+# ── PV-6: Non-standard port DNS query (DNS over non-53) ──────────────────────
+alert udp $HOME_NET any -> any !53 \
+  (msg:"POLICY-VIOLATION DNS Query on Non-Standard Port T1071.004"; \
+   content:"|00 00 01 00|"; depth:6; \
+   classtype:policy-violation; \
+   sid:9002006; rev:1; \
+   metadata:mitre_tactic Command_And_Control, \
+             mitre_technique_id T1071.004;)
+
+# ── PV-7: HTTP beaconing — periodic outbound from Internal (T1071.001) ────────
+alert http $INTERNAL_NET any -> $EXTERNAL_NET any \
+  (msg:"POLICY-VIOLATION HTTP Beaconing Pattern from Internal T1071.001"; \
+   flow:established,to_server; \
+   threshold:type both, track by_src, count 15, seconds 60; \
+   classtype:trojan-activity; \
+   sid:9002007; rev:1; \
+   metadata:mitre_tactic Command_And_Control, \
+             mitre_technique_id T1071.001;)
+
+# ── PV-8: Data zone attempting any non-established outbound connection ─────────
+alert ip $DATA_NET any -> !$DATA_NET any \
+  (msg:"POLICY-VIOLATION Data Zone Outbound Connection Attempt"; \
+   flow:to_server,not_established; \
+   classtype:policy-violation; \
+   sid:9002008; rev:1; \
+   metadata:mitre_tactic Exfiltration, mitre_technique_id T1048;)
+
+# ── PV-9: WinRM / PSRemoting cross-zone (T1021.006) ─────────────────────────
+alert tcp $DMZ_NET any -> $INTERNAL_NET 5985,5986 \
+  (msg:"POLICY-VIOLATION WinRM from DMZ T1021.006"; \
+   flow:to_server,not_established; flags:S,12; \
+   classtype:policy-violation; \
+   sid:9002009; rev:1; \
+   metadata:mitre_tactic Lateral_Movement, \
+             mitre_technique_id T1021.006;)
+
+# ── PV-10: PostgreSQL from DMZ (direct data access bypass attempt) ─────────────
+alert tcp $DMZ_NET any -> $DATA_NET 5432 \
+  (msg:"POLICY-VIOLATION Direct PostgreSQL Access from DMZ"; \
+   flow:to_server,not_established; flags:S,12; \
+   classtype:policy-violation; \
+   sid:9002010; rev:1; \
+   metadata:mitre_tactic Collection, mitre_technique_id T1005;)
