@@ -1,0 +1,23 @@
+#!/bin/bash
+# macOS shim: runs containerlab inside Docker Desktop's Linux environment.
+# Usage: ./scripts/clab deploy -t topology.clab.yml
+#        ./scripts/clab destroy -t topology.clab.yml
+#        ./scripts/clab inspect -t topology.clab.yml
+#
+# Why: Containerlab has no native macOS binary. On Apple Silicon, Docker Desktop
+# runs containers inside a Linux VM — this script runs containerlab inside that VM
+# so it has access to Linux network namespaces, which containerlab requires.
+
+set -euo pipefail
+
+CLAB_VERSION="${CLAB_VERSION:-0.76.0}"
+CLAB_IMAGE="ghcr.io/srl-labs/clab:${CLAB_VERSION}"
+WORKSPACE="$(pwd)"
+
+docker run --rm -it \
+  --privileged \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v "${WORKSPACE}:/workspace" \
+  -w /workspace \
+  "${CLAB_IMAGE}" \
+  containerlab "$@"

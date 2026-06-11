@@ -57,16 +57,22 @@ graph TD
 
 ## Quick Start
 
+### macOS / Apple Silicon note
+
+Containerlab has no native macOS binary — it requires Linux kernel network namespaces.
+On macOS, the included `scripts/clab` wrapper runs containerlab inside Docker Desktop's
+Linux VM, where the binary works normally. All commands below use this wrapper.
+
 ### Prerequisites
 
 ```bash
-# Install Containerlab (once)
-bash -c "$(curl -sL https://get.containerlab.dev)"
+# Docker Desktop for Apple Silicon must be running
 
-# Pull large images in advance (Kali is ~3 GB)
+# Pull large images in advance (Kali is ~3 GB — do this before the demo)
 docker pull kalilinux/kali-rolling
 docker pull vyos/vyos:sagitta
 docker pull jasonish/suricata:7.0
+docker pull ghcr.io/srl-labs/clab:0.76.0   # containerlab runner image
 ```
 
 ### Configure Wazuh endpoint
@@ -85,17 +91,21 @@ scp wazuh-admin@<WAZUH_IP>:/etc/wazuh-manager/api/configuration/ssl/root-ca.pem 
 git clone https://github.com/sahilsinghi/network-segmentation-lab
 cd network-segmentation-lab
 
-# Deploy full lab (< 5 minutes on first run after image pulls)
-sudo containerlab deploy -t topology.clab.yml
+# Deploy full lab via macOS wrapper (< 5 minutes after image pulls)
+./scripts/clab deploy -t topology.clab.yml
 
 # Verify all containers up
 sudo containerlab inspect -t topology.clab.yml
 ```
 
-### Tear down
+### Inspect and tear down
 
 ```bash
-sudo containerlab destroy -t topology.clab.yml
+# Show running nodes
+./scripts/clab inspect -t topology.clab.yml
+
+# Tear down cleanly
+./scripts/clab destroy -t topology.clab.yml
 ```
 
 ---
@@ -245,11 +255,15 @@ network-segmentation-lab/
 
 ## ARM64 Notes (Apple Silicon)
 
-- **Containerlab:** Native ARM64 binary — no emulation
+- **Containerlab:** Linux-only binary — `scripts/clab` wrapper runs it inside Docker Desktop's Linux VM
 - **VyOS sagitta:** Multi-arch image — runs natively on M1/M2/M3
 - **Kali:** `kalilinux/kali-rolling` is multi-arch ARM64 native
 - **Suricata:** `jasonish/suricata:7.0` is multi-arch ARM64 native
 - **pfSense alternative:** pfSense has no ARM64 build — VyOS is the correct choice here
+
+> **Why not a native macOS containerlab binary?** Containerlab requires Linux kernel primitives
+> (network namespaces, veth pairs, Linux bridges) that macOS does not expose. Docker Desktop
+> provides those primitives inside its embedded Linux VM, which is exactly where `scripts/clab` runs.
 
 ---
 
