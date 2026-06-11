@@ -21,15 +21,16 @@ topology:
       kind: bridge
 
     # ─── Firewall / Router ───────────────────────────────────────────────────
+    # NOTE: vyos/vyos Docker Hub images are build-environment only and don't
+    # exist for ARM64/sagitta. This node uses a custom Alpine+nftables image
+    # that enforces the identical policy defined in vyos/bootstrap-config.boot.
+    # The VyOS config file documents policy in VyOS CLI syntax for the resume/portfolio.
     vyos:
       kind: linux
-      image: vyos/vyos:sagitta
+      image: lab-firewall:latest
       privileged: true
       binds:
         - vyos/bootstrap-config.boot:/opt/vyatta/etc/config/config.boot:ro
-        - /lib/modules:/lib/modules:ro
-      env:
-        VYOS_DONT_LOAD_CONFIG: "false"
 
     # ─── DMZ zone (10.10.10.0/24) ────────────────────────────────────────────
     nginx-dmz:
