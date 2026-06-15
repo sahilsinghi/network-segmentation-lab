@@ -42,8 +42,7 @@ topology:
       image: lab-nginx-dmz:latest  # built by: make build
       exec:
         - "ip addr add 10.10.10.10/24 dev eth1"
-        - "ip route del default || true"
-        - "ip route add default via 10.10.10.1"
+        - "ip route add 10.10.0.0/16 via 10.10.10.1 || true"
 
     kali:
       kind: linux
@@ -52,8 +51,7 @@ topology:
         - tests/attacks:/opt/attacks
       exec:
         - "ip addr add 10.10.10.20/24 dev eth1"
-        - "ip route del default || true"
-        - "ip route add default via 10.10.10.1"
+        - "ip route add 10.10.0.0/16 via 10.10.10.1 || true"
 
     # ─── Internal zone (10.10.20.0/24) ───────────────────────────────────────
     workstation:
@@ -61,8 +59,7 @@ topology:
       image: lab-workstation:latest  # built by: make build
       exec:
         - "ip addr add 10.10.20.10/24 dev eth1"
-        - "ip route del default || true"
-        - "ip route add default via 10.10.20.1"
+        - "ip route add 10.10.0.0/16 via 10.10.20.1 || true"
 
     # ─── Data zone (10.10.30.0/24) ───────────────────────────────────────────
     postgres-db:
@@ -70,8 +67,7 @@ topology:
       image: lab-postgres:latest  # built by: make build
       exec:
         - "ip addr add 10.10.30.10/24 dev eth1"
-        - "ip route del default || true"
-        - "ip route add default via 10.10.30.1"
+        - "ip route add 10.10.0.0/16 via 10.10.30.1 || true"
 
     # ─── Management zone (10.10.40.0/24) ─────────────────────────────────────
     admin-mgmt:
@@ -79,8 +75,7 @@ topology:
       image: lab-admin-mgmt:latest  # built by: make build
       exec:
         - "ip addr add 10.10.40.10/24 dev eth1"
-        - "ip route del default || true"
-        - "ip route add default via 10.10.40.1"
+        - "ip route add 10.10.0.0/16 via 10.10.40.1 || true"
 
     # ─── Detection plane ─────────────────────────────────────────────────────
     suricata:
@@ -100,7 +95,7 @@ topology:
         - suricata/custom-rules:/etc/suricata/rules/custom:ro
         - logs/suricata:/var/log/suricata
       exec:
-        - "suricata -c /etc/suricata/suricata.yaml --af-packet=eth1 --af-packet=eth2 --af-packet=eth3 --af-packet=eth4 -D 2>/dev/null &"
+        - "suricata -c /etc/suricata/suricata.yaml --af-packet -D"
 
     filebeat:
       kind: linux
