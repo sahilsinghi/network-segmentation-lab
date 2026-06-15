@@ -35,9 +35,7 @@ topology:
     # ─── DMZ zone (10.10.10.0/24) ────────────────────────────────────────────
     nginx-dmz:
       kind: linux
-      image: nginx:1.25-alpine
-      binds:
-        - endpoints/nginx-dmz/default.conf:/etc/nginx/conf.d/default.conf:ro
+      image: lab-nginx-dmz:latest  # built by: make build
       exec:
         - "ip addr add 10.10.10.10/24 dev eth1"
         - "ip route del default || true"
@@ -56,9 +54,7 @@ topology:
     # ─── Internal zone (10.10.20.0/24) ───────────────────────────────────────
     workstation:
       kind: linux
-      image: ubuntu:22.04
-      binds:
-        - endpoints/workstation-internal/setup.sh:/opt/setup.sh:ro
+      image: lab-workstation:latest  # built by: make build
       exec:
         - "ip addr add 10.10.20.10/24 dev eth1"
         - "ip route del default || true"
@@ -67,11 +63,7 @@ topology:
     # ─── Data zone (10.10.30.0/24) ───────────────────────────────────────────
     postgres-db:
       kind: linux
-      image: postgres:15-alpine
-      env:
-        POSTGRES_PASSWORD: "labpassword"
-        POSTGRES_DB: "labdb"
-        POSTGRES_USER: "labuser"
+      image: lab-postgres:latest  # built by: make build
       exec:
         - "ip addr add 10.10.30.10/24 dev eth1"
         - "ip route del default || true"
@@ -80,9 +72,7 @@ topology:
     # ─── Management zone (10.10.40.0/24) ─────────────────────────────────────
     admin-mgmt:
       kind: linux
-      image: ubuntu:22.04
-      binds:
-        - endpoints/admin-mgmt/setup.sh:/opt/setup.sh:ro
+      image: lab-admin-mgmt:latest  # built by: make build
       exec:
         - "ip addr add 10.10.40.10/24 dev eth1"
         - "ip route del default || true"

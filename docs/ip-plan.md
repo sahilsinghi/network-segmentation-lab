@@ -15,27 +15,27 @@
 ### DMZ Zone — 10.10.10.0/24
 | Host | IP | Role | Image |
 |------|----|------|-------|
-| VyOS gateway | 10.10.10.1 | L3 router/firewall | vyos/vyos:sagitta |
-| nginx-dmz | 10.10.10.10 | nginx web server | nginx:1.25-alpine |
-| kali | 10.10.10.20 | Attacker (Kali ARM64) | kalilinux/kali-rolling |
+| Firewall gateway | 10.10.10.1 | L3 router/firewall (Alpine+nftables) | `lab-firewall:latest` |
+| nginx-dmz | 10.10.10.10 | nginx + SSH (for mgmt access) | `lab-nginx-dmz:latest` |
+| kali | 10.10.10.20 | Attacker (Kali ARM64) | `kalilinux/kali-rolling` |
 
 ### Internal Zone — 10.10.20.0/24
 | Host | IP | Role | Image |
 |------|----|------|-------|
-| VyOS gateway | 10.10.20.1 | L3 router/firewall | vyos/vyos:sagitta |
-| workstation | 10.10.20.10 | Ubuntu workstation + SMB | ubuntu:22.04 |
+| Firewall gateway | 10.10.20.1 | L3 router/firewall (Alpine+nftables) | `lab-firewall:latest` |
+| workstation | 10.10.20.10 | Ubuntu + SSH + Samba (SMB target) | `lab-workstation:latest` |
 
 ### Data Zone — 10.10.30.0/24
 | Host | IP | Role | Image |
 |------|----|------|-------|
-| VyOS gateway | 10.10.30.1 | L3 router/firewall | vyos/vyos:sagitta |
-| postgres-db | 10.10.30.10 | PostgreSQL 15 | postgres:15-alpine |
+| Firewall gateway | 10.10.30.1 | L3 router/firewall (Alpine+nftables) | `lab-firewall:latest` |
+| postgres-db | 10.10.30.10 | PostgreSQL 15 + SSH | `lab-postgres:latest` |
 
 ### Management Zone — 10.10.40.0/24
 | Host | IP | Role | Image |
 |------|----|------|-------|
-| VyOS gateway | 10.10.40.1 | L3 router/firewall | vyos/vyos:sagitta |
-| admin-mgmt | 10.10.40.10 | Admin jump host | ubuntu:22.04 |
+| Firewall gateway | 10.10.40.1 | L3 router/firewall (Alpine+nftables) | `lab-firewall:latest` |
+| admin-mgmt | 10.10.40.10 | Admin jump host + SSH client | `lab-admin-mgmt:latest` |
 
 ### Detection Plane (no zone IP — passive monitoring)
 | Host | IP | Role | Image |

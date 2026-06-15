@@ -36,7 +36,7 @@ af-packet:
     ring-size: 2048
     block-size: 32768
     threads: auto
-    copy-mode: ips  # set to 'ips' only if IPS mode is needed; safe in IDS
+    copy-mode: none  # IDS passive tap — no packet copying
 
   - interface: eth2
     cluster-id: 98

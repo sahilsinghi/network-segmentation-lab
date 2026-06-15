@@ -65,14 +65,19 @@ Linux VM, where the binary works normally. All commands below use this wrapper.
 
 ### Prerequisites
 
-```bash
-# Docker Desktop for Apple Silicon must be running
+Docker Desktop for Apple Silicon must be running.
 
-# Pull large images in advance (Kali is ~3 GB — do this before the demo)
-docker pull kalilinux/kali-rolling
-docker pull vyos/vyos:sagitta
-docker pull jasonish/suricata:7.0
-docker pull ghcr.io/srl-labs/clab:0.76.0   # containerlab runner image
+### First-time setup
+
+```bash
+git clone https://github.com/sahilsinghi/network-segmentation-lab
+cd network-segmentation-lab
+
+# Build all custom lab images (firewall, endpoints)
+make build
+
+# Pre-pull large remote images (Kali ~3 GB — do this before a timed demo)
+make pull
 ```
 
 ### Configure Wazuh endpoint
@@ -88,24 +93,24 @@ scp wazuh-admin@<WAZUH_IP>:/etc/wazuh-manager/api/configuration/ssl/root-ca.pem 
 ### Deploy
 
 ```bash
-git clone https://github.com/sahilsinghi/network-segmentation-lab
-cd network-segmentation-lab
+# Build custom images + deploy full lab (< 5 minutes after initial pulls)
+make deploy
 
-# Deploy full lab via macOS wrapper (< 5 minutes after image pulls)
+# Or deploy manually if images are already built
 ./scripts/clab deploy -t topology.clab.yml
-
-# Verify all containers up
-sudo containerlab inspect -t topology.clab.yml
 ```
 
 ### Inspect and tear down
 
 ```bash
-# Show running nodes
-./scripts/clab inspect -t topology.clab.yml
+# Show running nodes and management IPs
+make inspect
+
+# Tail live Suricata alerts
+make logs
 
 # Tear down cleanly
-./scripts/clab destroy -t topology.clab.yml
+make destroy
 ```
 
 ---

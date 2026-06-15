@@ -31,4 +31,4 @@ COPY setup.sh /opt/setup.sh
 RUN chmod +x /opt/setup.sh
 
 EXPOSE 22 139 445
-CMD ["/bin/sh", "-c", "service smbd start && /usr/sbin/sshd -D"]
+CMD ["/bin/sh", "-c", "smbd --daemon 2>/dev/null || true; exec /usr/sbin/sshd -D"]
