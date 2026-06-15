@@ -6,6 +6,7 @@ filebeat/certs/*.crt
 filebeat/certs/*.key
 filebeat/certs/*.pem
 .containerlab/
+clab-network-seg-lab/
 __pycache__/
 *.pyc
 .DS_Store

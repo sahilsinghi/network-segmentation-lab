@@ -14,10 +14,17 @@ CLAB_VERSION="${CLAB_VERSION:-0.76.0}"
 CLAB_IMAGE="ghcr.io/srl-labs/clab:${CLAB_VERSION}"
 WORKSPACE="$(pwd)"
 
-docker run --rm -it \
+# Allocate a TTY only when running interactively (not from make/CI)
+TTY_FLAG=""
+[ -t 0 ] && TTY_FLAG="-t"
+
+docker run --rm -i $TTY_FLAG \
   --privileged \
+  --network host \
+  --pid host \
   -v /var/run/docker.sock:/var/run/docker.sock \
-  -v "${WORKSPACE}:/workspace" \
-  -w /workspace \
+  -v "${WORKSPACE}:${WORKSPACE}" \
+  -v /var/run/netns:/var/run/netns \
+  -w "${WORKSPACE}" \
   "${CLAB_IMAGE}" \
   containerlab "$@"

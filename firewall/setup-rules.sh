@@ -12,7 +12,7 @@
 set -euo pipefail
 
 # ── Enable IP forwarding ────────────────────────────────────────────────────
-echo 1 > /proc/sys/net/ipv4/ip_forward
+echo 1 > /proc/sys/net/ipv4/ip_forward 2>/dev/null || true
 sysctl -w net.ipv4.ip_forward=1 2>/dev/null || true
 
 # ── Assign interface IPs (Containerlab may handle this, belt-and-suspenders) ─

@@ -28,7 +28,11 @@ topology:
     vyos:
       kind: linux
       image: lab-firewall:latest
-      privileged: true
+      cap-add:
+        - NET_ADMIN
+        - NET_RAW
+      sysctls:
+        net.ipv4.ip_forward: 1
       binds:
         - vyos/bootstrap-config.boot:/opt/vyatta/etc/config/config.boot:ro
 
@@ -82,18 +86,21 @@ topology:
     suricata:
       kind: linux
       image: jasonish/suricata:7.0
-      privileged: true
+      cap-add:
+        - NET_ADMIN
+        - NET_RAW
+        - SYS_NICE
+        - IPC_LOCK
+      # Sleep at start — Containerlab attaches eth1-4 AFTER container starts.
+      # Suricata is launched via exec once interfaces exist.
+      entrypoint: /bin/sh
+      cmd: -c "sleep infinity"
       binds:
         - suricata/suricata.yaml:/etc/suricata/suricata.yaml:ro
         - suricata/custom-rules:/etc/suricata/rules/custom:ro
         - logs/suricata:/var/log/suricata
-      cmd: |
-        -c /etc/suricata/suricata.yaml
-        --af-packet=eth1
-        --af-packet=eth2
-        --af-packet=eth3
-        --af-packet=eth4
-        -v
+      exec:
+        - "suricata -c /etc/suricata/suricata.yaml --af-packet=eth1 --af-packet=eth2 --af-packet=eth3 --af-packet=eth4 -D 2>/dev/null &"
 
     filebeat:
       kind: linux
@@ -106,24 +113,24 @@ topology:
 
   # ─── Links ───────────────────────────────────────────────────────────────
   links:
-    # VyOS uplinks to each zone bridge
-    - endpoints: ["vyos:eth1", "br-dmz:vyos"]
-    - endpoints: ["vyos:eth2", "br-internal:vyos"]
-    - endpoints: ["vyos:eth3", "br-data:vyos"]
-    - endpoints: ["vyos:eth4", "br-mgmt:vyos"]
+    # VyOS uplinks to each zone bridge (endpoint names must be unique in host ns)
+    - endpoints: ["vyos:eth1", "br-dmz:fw-dmz"]
+    - endpoints: ["vyos:eth2", "br-internal:fw-int"]
+    - endpoints: ["vyos:eth3", "br-data:fw-data"]
+    - endpoints: ["vyos:eth4", "br-mgmt:fw-mgmt"]
 
     # DMZ endpoints
-    - endpoints: ["nginx-dmz:eth1", "br-dmz:nginx"]
-    - endpoints: ["kali:eth1", "br-dmz:kali"]
+    - endpoints: ["nginx-dmz:eth1", "br-dmz:ep-nginx"]
+    - endpoints: ["kali:eth1", "br-dmz:ep-kali"]
 
     # Internal endpoints
-    - endpoints: ["workstation:eth1", "br-internal:ws"]
+    - endpoints: ["workstation:eth1", "br-internal:ep-ws"]
 
     # Data endpoints
-    - endpoints: ["postgres-db:eth1", "br-data:pg"]
+    - endpoints: ["postgres-db:eth1", "br-data:ep-pg"]
 
     # Management endpoints
-    - endpoints: ["admin-mgmt:eth1", "br-mgmt:admin"]
+    - endpoints: ["admin-mgmt:eth1", "br-mgmt:ep-admin"]
 
     # Suricata passive taps on every zone bridge
     - endpoints: ["suricata:eth1", "br-dmz:ids-dmz"]
