@@ -1,7 +1,7 @@
 # Ignore generated log files; directory structure is tracked via .gitkeep
 logs/suricata/*.json
 logs/suricata/*.log
-screenshots/*.png
+# screenshots/*.png — evidence PNGs are committed
 filebeat/certs/*.crt
 filebeat/certs/*.key
 filebeat/certs/*.pem
