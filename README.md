@@ -44,13 +44,13 @@ graph TD
     GW -->|"no outbound"| DATA
     GW -->|"SSH only"| MGMT
 
-    IDS["Suricata 7.x IDS\nAF-PACKET passive tap\nET Open + 15 custom rules"]
-    FB["Filebeat\nSuricata module"]
-    WAZUH["Wazuh Manager\n(existing SOC Lab)\nhost + network telemetry"]
+    IDS["Suricata 7.x IDS\nAF-PACKET passive tap\nET Open + 25 custom rules"]
+    AGENT["Wazuh Agent 4.13.1\nmacOS host\nmonitors eve.json"]
+    WAZUH["Wazuh Manager 4.13.1\n192.168.64.40\nRule 86601 — Suricata alerts"]
 
     DMZ & INT & DATA & MGMT -->|"all traffic mirrored"| IDS
-    IDS -->|"EVE JSON"| FB
-    FB -->|"TLS port 5044"| WAZUH
+    IDS -->|"EVE JSON bind-mount"| AGENT
+    AGENT -->|"port 1514 TCP"| WAZUH
 ```
 
 ---
@@ -94,13 +94,19 @@ make pull
 
 ### Configure Wazuh endpoint
 
-Edit `filebeat/filebeat.yml` and replace `WAZUH_MANAGER_IP` with your Wazuh manager IP.
-Copy the Wazuh CA cert to `filebeat/certs/wazuh-ca.crt`:
+Install the Wazuh agent on the macOS host running this lab, then add the Suricata localfile block to `/Library/Ossec/etc/ossec.conf`:
 
-```bash
-scp wazuh-admin@<WAZUH_IP>:/etc/wazuh-manager/api/configuration/ssl/root-ca.pem \
-    filebeat/certs/wazuh-ca.crt
+```xml
+<localfile>
+  <log_format>json</log_format>
+  <location>/path/to/network-segmentation-lab/logs/suricata/eve.json</location>
+  <label key="lab">network-seg-lab</label>
+</localfile>
 ```
+
+Restart the agent: `sudo /Library/Ossec/bin/wazuh-control restart`
+
+See [`docs/wazuh-integration.md`](docs/wazuh-integration.md) for full setup details and the Filebeat production-grade alternative.
 
 ### Deploy
 
@@ -189,13 +195,14 @@ alert tcp $DMZ_NET any -> $INTERNAL_NET 445 \
 
 ## Wazuh Integration
 
-Suricata EVE JSON flows via Filebeat to the **existing Wazuh manager from the SOC Detection Lab**.
-No new SIEM deployment. Two data sources, one dashboard:
+Suricata EVE JSON is forwarded to the **existing Wazuh manager from the SOC Detection Lab** via the macOS Wazuh agent. No new SIEM deployment. Two data sources, one dashboard:
 
-- **Host telemetry:** Sysmon events from SOC Lab Windows VMs
-- **Network telemetry:** Suricata EVE JSON from this lab
+- **Host telemetry:** Sysmon events from SOC Lab Windows agent
+- **Network telemetry:** Suricata EVE JSON from this lab (Rule 86601)
 
-See [`docs/cross-portfolio-bridge.md`](docs/cross-portfolio-bridge.md) for correlation queries.
+**Validated:** `POLICY-VIOLATION RDP from DMZ T1021.001` (sid:9002005) triggered by nmap from Kali → Wazuh Rule 86601 fired on the manager within seconds.
+
+See [`docs/wazuh-integration.md`](docs/wazuh-integration.md) for the full pipeline and setup steps.
 
 ---
 
@@ -204,7 +211,7 @@ See [`docs/cross-portfolio-bridge.md`](docs/cross-portfolio-bridge.md) for corre
 - [ ] `containerlab deploy -t topology.clab.yml` completes in < 5 minutes
 - [ ] VyOS enforces policy matrix — verified with nmap from each zone
 - [ ] Suricata writes EVE JSON to `logs/suricata/eve.json`
-- [ ] Filebeat ships to Wazuh — alerts appear within 30s of attack execution
+- [x] Wazuh agent ships Suricata EVE JSON to Wazuh Manager — Rule 86601 fires within seconds
 - [ ] All 6 attack simulations run with documented outcomes in `tests/execution_log.md`
 - [ ] At least 3 simulations show correlated alerts in both Suricata and Wazuh
 - [ ] Threat model maps all controls to MITRE ATT&CK technique IDs
@@ -264,6 +271,7 @@ network-segmentation-lab/
 │   ├── ip-plan.md
 │   ├── firewall-policy.md      # Full allow/deny matrix with VyOS references
 │   ├── threat-model.md         # MITRE ATT&CK control mapping
+│   ├── wazuh-integration.md    # Suricata → Wazuh pipeline (validated)
 │   └── cross-portfolio-bridge.md  # How this feeds the SOC Lab Wazuh instance
 └── screenshots/
 ```
