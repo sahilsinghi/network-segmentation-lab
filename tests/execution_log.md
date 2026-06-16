@@ -106,11 +106,45 @@
 | 01 — Port Scan | T1046 | Filtered non-HTTP | **149 alerts** (SIDs 9001004 ×124, 9001013 ×17, 9002003/5/9 ×8) | ✅ DETECTED |
 | 02 — SMB Lateral | T1021.002 | **BLOCKED** port 445 | 0 (traffic never reached bridge) | ✅ BLOCKED |
 | 03 — SSH Brute Force | T1110.001 | **BLOCKED** port 22 | 0 (traffic never reached bridge) | ✅ BLOCKED |
-| 04 — DNS Tunnel | T1048.003 | Allowed DNS egress | 0 (DNS routed via host network, not bridge) | ⚠️ PARTIAL |
-| 05 — Reverse Shell | T1059.004 | N/A (same-host) | 0 (loopback, no cross-bridge traffic) | ⚠️ PARTIAL |
-| 06 — ICMP Covert | T1095 | **ALLOWED** (gap confirmed) | 0 new (SID 9001012 did not fire; 9001013 triggered by Sim 01) | ⚠️ PARTIAL |
+| 04 — DNS Tunnel | T1048.003 | Allowed DNS egress | 0 | 🔍 FINDING: IDS blind spot |
+| 05 — Reverse Shell | T1059.004 | N/A (same-host) | 0 | 🔍 FINDING: namespace boundary |
+| 06 — ICMP Covert | T1095 | **ALLOWED** (gap confirmed) | 0 | 🔍 FINDING: two separate gaps |
 
 **Total Suricata alerts generated: 149**
+
+---
+
+## Architectural Findings
+
+Three simulations produced findings more valuable than a simple alert count.
+
+### Finding 1 — DNS Tunnel (Sim 04): Docker host networking is an IDS blind spot
+
+DNS egress from containers routes via Docker's default bridge (eth0 / management network), not via the lab zone bridges. Suricata only monitors zone bridges. Any attacker technique that exfiltrates via the management network path — DNS tunneling, HTTPS beaconing to an external C2, NTP-based covert channels — bypasses this IDS entirely.
+
+**Real-world parallel:** Cloud-hosted workloads with a management plane (AWS IMDSv1, GCP metadata server) present the same blind spot: traffic to the management endpoint never hits your network IDS.
+
+**Remediation path:** Deploy Suricata on the host network interface in addition to the zone bridges, or mirror the Docker management bridge to an additional IDS tap.
+
+---
+
+### Finding 2 — Reverse Shell (Sim 05): Container network namespace boundary vs. zone crossing
+
+The reverse shell payload was sent to the listener on the same container's own IP (10.10.10.20 → 10.10.10.20). The TCP connection resolved within the container's network namespace — it never left the namespace, so it never hit br-dmz. This is not a detection failure; it exposes a fundamental truth about containerised labs: intra-container traffic is invisible to bridge-level IDS regardless of IP addressing.
+
+**Real-world parallel:** In a micro-services environment, sidecar-to-sidecar traffic within a pod namespace bypasses any external IDS tap. Service mesh observability (Istio/Envoy mTLS telemetry) is required to close this gap.
+
+**What would trigger the rule:** A victim container in a *different* zone (e.g., workstation at 10.10.20.10) making the outbound callback — that traffic crosses br-internal → vyos → br-dmz, hitting Suricata's tap on both bridges. The detection logic in SIDs 9001009/9001010 is correct; the simulation traffic path was the limitation.
+
+---
+
+### Finding 3 — ICMP Covert Channel (Sim 06): Two separate gaps discovered from one simulation
+
+**Gap A — VyOS firewall:** ICMP is fully allowed across all zone boundaries (required for `ping`-based diagnostics). This is documented in `docs/firewall-policy.md` as an accepted risk. A production hardening step would be to rate-limit ICMP at the firewall and block ICMP from DMZ to Internal entirely.
+
+**Gap B — Suricata rule bug:** SID 9001012 (`dsize:>512`) did not fire against a 600-byte ping (`ping -s 600`). The rule fires on IP payload size, but `ping -s N` sets the ICMP *data* size — the actual IP payload includes the 8-byte ICMP header, making it `N+8`. More importantly, Alpine's kernel ICMP forwarding path may fragment or reframe the packet before it hits the bridge tap. The rule needs validation with a raw packet generator (`hping3 --icmp --data 514`) to confirm the dsize boundary. This is a rule-coverage bug, not a Suricata configuration issue.
+
+**Remediation path for Gap B:** Replace `dsize:>512` with `dsize:>504` (accounts for ICMP header) and validate with `hping3`. Add a `within` threshold to prevent false positives on legitimate jumbo-frame environments.
 
 ---
 
