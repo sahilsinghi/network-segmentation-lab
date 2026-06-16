@@ -1,4 +1,4 @@
-.PHONY: build pull deploy destroy logs clean inspect bridges
+.PHONY: build pull deploy destroy logs clean inspect bridges tap-mirrors
 
 CLAB_VERSION ?= 0.76.0
 
@@ -26,10 +26,24 @@ bridges:
 	  ip link add br-mgmt type bridge 2>/dev/null || true; ip link set br-mgmt up; \
 	  echo '[+] Bridges ready: br-dmz br-internal br-data br-mgmt'"
 
+# Wire up TC ingress mirrors so Suricata sees all bridge traffic (run after deploy)
+# Linux bridges do unicast forwarding once MACs are learned, bypassing the IDS tap.
+# TC mirrors copy every frame entering each data port to the corresponding ids-* tap.
+tap-mirrors:
+	docker run --rm --privileged --network host alpine:latest sh -c "\
+	  apk add -q iproute2 2>/dev/null; TC=/sbin/tc; \
+	  mirror() { \$$TC qdisc del dev \$$1 ingress 2>/dev/null||true; \$$TC qdisc add dev \$$1 handle ffff: ingress; \$$TC filter add dev \$$1 parent ffff: matchall action mirred egress mirror dev \$$2; echo \"  [+] \$$1 → \$$2\"; }; \
+	  echo '[br-dmz]';      mirror fw-dmz ids-dmz; mirror ep-nginx ids-dmz; mirror ep-kali ids-dmz; \
+	  echo '[br-internal]'; mirror fw-int ids-int;  mirror ep-ws ids-int; \
+	  echo '[br-data]';     mirror fw-data ids-data; mirror ep-pg ids-data; \
+	  echo '[br-mgmt]';     mirror fw-mgmt ids-mgmt; mirror ep-admin ids-mgmt; \
+	  echo '[+] All IDS tap mirrors active'"
+
 # Build custom images then deploy the full lab
 deploy: build bridges
 	mkdir -p logs/suricata
 	./scripts/clab deploy -t topology.clab.yml
+	$(MAKE) tap-mirrors
 
 # Tear down the lab cleanly and remove zone bridges
 destroy:
