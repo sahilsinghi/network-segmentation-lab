@@ -55,6 +55,18 @@ graph TD
 
 ---
 
+## Evidence
+
+| Lab Running | Firewall Policy |
+|-------------|-----------------|
+| ![Topology running](screenshots/01-topology-running.png) | ![nftables ruleset](screenshots/02-nftables-policy.png) |
+
+| Suricata Alerts (149 total) | Attack Execution |
+|-----------------------------|-----------------|
+| ![Suricata fast.log](screenshots/03-suricata-alerts.png) | ![nmap scan from Kali](screenshots/04-attack-execution.png) |
+
+---
+
 ## Quick Start
 
 ### macOS / Apple Silicon note
